@@ -1,33 +1,44 @@
 import socket
-import json
 import os
+import json
 
-class Client:
-    def __init__(self, manager_host, manager_port):
-        self.manager_host = manager_host
-        self.manager_port = manager_port
+class Cliente:
+    def __init__(self, gerenciador_host, gerenciador_port):
+        self.gerenciador_host = gerenciador_host
+        self.gerenciador_port = gerenciador_port
 
-    def backup_file(self, filename):
-        with open(filename, 'rb') as f:
-            filedata = f.read().decode()
-        
-        # Contact manager
-        manager_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        manager_socket.connect((self.manager_host, self.manager_port))
-        manager_socket.send(filename.encode())
-        
-        response = manager_socket.recv(1024)
-        server_info = json.loads(response.decode())
-        manager_socket.close()
-        
-        # Send file to primary server
-        primary_info = server_info['primary']
-        primary_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        primary_socket.connect((primary_info['host'], primary_info['port']))
-        request = {'filename': filename, 'filedata': filedata, 'replica': server_info['replica']}
-        primary_socket.send(json.dumps(request).encode())
-        primary_socket.close()
+    def enviar_arquivo(self, filename):
+        if os.path.exists(filename):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((self.gerenciador_host, self.gerenciador_port))
+                s.sendall(filename.encode())
+                resposta = s.recv(1024).decode()
+                resposta = json.loads(resposta)
+                servidor_principal = resposta['principal']
+                servidor_replica = resposta['replica']
 
-if __name__ == "__main__":
-    client = Client('localhost', 5000)
-    client.backup_file('example.txt')
+                # Ler o arquivo em modo binário
+                with open(filename, 'rb') as f:
+                    content = f.read()
+
+                # Enviar para o servidor principal
+                self.enviar_para_servidor(servidor_principal, filename, content, 'armazenado')
+
+                # Enviar para o servidor de réplica
+                self.enviar_para_servidor(servidor_replica, filename, content, 'replicado')
+        else:
+            print('Arquivo não encontrado.')
+
+    def enviar_para_servidor(self, servidor, filename, content, tipo):
+        host, port = servidor.split(':')
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, int(port)))
+            # Enviar o nome do arquivo e o conteúdo binário separados por "::"
+            mensagem = f'{filename}::{content.decode("latin1")}'
+            s.sendall(mensagem.encode())
+            print(f'Arquivo {filename} {tipo} em {host}:{port}.')
+
+if __name__ == '__main__':
+    cliente = Cliente('127.0.0.1', 5000)  # IP e porta do gerenciador
+    filename = input('Digite o nome do arquivo para backup: ')
+    cliente.enviar_arquivo(filename)

@@ -1,48 +1,53 @@
 import socket
-import threading
 import os
-import json
 
-class Server:
-    def __init__(self, host, port, server_id):
-        self.host = host
+class Servidor:
+    def __init__(self, port, capacity):
         self.port = port
-        self.server_id = server_id
-
-    def handle_client(self, client_socket):
-        try:
-            data = client_socket.recv(4096)
-            request = json.loads(data.decode())
-            filename = request['filename']
-            filedata = request['filedata']
-            replica_info = request['replica']
-            
-            # Save the file
-            with open(filename, 'wb') as f:
-                f.write(filedata.encode())
-            
-            # Send replica
-            self.send_replica(replica_info, filename, filedata)
-        finally:
-            client_socket.close()
-
-    def send_replica(self, replica_info, filename, filedata):
-        replica_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        replica_socket.connect((replica_info['host'], replica_info['port']))
-        request = {'filename': filename, 'filedata': filedata}
-        replica_socket.send(json.dumps(request).encode())
-        replica_socket.close()
+        self.capacity = capacity
+        self.used_space = 0
+        self.data_dir = f'data_{port}'
+        os.makedirs(self.data_dir, exist_ok=True)
 
     def start(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
-        print(f"Server {self.server_id} started on {self.host}:{self.port}")
-        
-        while True:
-            client_socket, _ = server_socket.accept()
-            threading.Thread(target=self.handle_client, args=(client_socket,)).start()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('0.0.0.0', self.port))
+            s.listen()
+            print(f'Servidor iniciado na porta {self.port}...')
+            while True:
+                conn, addr = s.accept()
+                self.handle_client(conn)
 
-if __name__ == "__main__":
-    server = Server('localhost', 5001, 'Server1')
-    server.start()
+    def handle_client(self, conn):
+        with conn:
+            data = conn.recv(1024).decode()
+            if data:
+                filename, content = data.split('::', 1)
+                filepath = os.path.join(self.data_dir, filename)
+                if self.store_file(filepath, content):
+                    print(f'Arquivo {filename} armazenado em {self.port}.')
+                else:
+                    print(f'Erro ao armazenar o arquivo {filename}. Espaço insuficiente.')
+
+    def store_file(self, filepath, content):
+        if len(content) + self.used_space <= self.capacity:
+            with open(filepath, 'w') as f:
+                f.write(content)
+            self.used_space += len(content)
+            return True
+        return False
+
+    def replicar_arquivo(self, filepath, replica_host, replica_port):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((replica_host, replica_port))
+            with open(filepath, 'r') as f:
+                content = f.read()
+            filename = os.path.basename(filepath)
+            s.sendall(f'{filename}::{content}'.encode())
+            print(f'Replicação do arquivo {filename} enviada para {replica_host}:{replica_port}.')
+
+if __name__ == '__main__':
+    port = int(input('Digite a porta do servidor: '))
+    capacity = int(input('Digite a capacidade do servidor (em bytes): '))
+    servidor = Servidor(port, capacity)
+    servidor.start()
