@@ -1,6 +1,5 @@
 import socket
 import os
-import json
 
 class Cliente:
     def __init__(self, gerenciador_host, gerenciador_port):
@@ -13,30 +12,27 @@ class Cliente:
                 s.connect((self.gerenciador_host, self.gerenciador_port))
                 s.sendall(filename.encode())
                 resposta = s.recv(1024).decode()
-                resposta = json.loads(resposta)
-                servidor_principal = resposta['principal']
-                servidor_replica = resposta['replica']
-
-                # Ler o arquivo em modo binário
-                with open(filename, 'rb') as f:
-                    content = f.read()
+                servidor_principal, servidor_replica = resposta.split('::')
 
                 # Enviar para o servidor principal
-                self.enviar_para_servidor(servidor_principal, filename, content, 'armazenado')
+                self.enviar_para_servidor(servidor_principal, filename)
 
                 # Enviar para o servidor de réplica
-                self.enviar_para_servidor(servidor_replica, filename, content, 'replicado')
+                self.enviar_para_servidor(servidor_replica, filename)
         else:
             print('Arquivo não encontrado.')
 
-    def enviar_para_servidor(self, servidor, filename, content, tipo):
+    def enviar_para_servidor(self, servidor, filename):
         host, port = servidor.split(':')
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((host, int(port)))
-            # Enviar o nome do arquivo e o conteúdo binário separados por "::"
-            mensagem = f'{filename}::{content.decode("latin1")}'
-            s.sendall(mensagem.encode())
-            print(f'Arquivo {filename} {tipo} em {host}:{port}.')
+            s.sendall(filename.encode())  # Enviar o nome do arquivo
+            s.recv(1024)  # Aguardar confirmação
+
+            with open(filename, 'rb') as f:
+                while (chunk := f.read(1024)):  # Ler e enviar o arquivo em pacotes de 1024 bytes
+                    s.sendall(chunk)
+            print(f'Arquivo {filename} enviado para {host}:{port}.')
 
 if __name__ == '__main__':
     cliente = Cliente('127.0.0.1', 5000)  # IP e porta do gerenciador
