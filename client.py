@@ -2,7 +2,7 @@ import socket
 import os
 
 class Cliente:
-    def __init__(self, gerenciador_host, gerenciador_port):
+    def __init__(self, gerenciador_host, gerenciador_port): ## conexão com o servidor
         self.gerenciador_host = gerenciador_host
         self.gerenciador_port = gerenciador_port
 
@@ -22,15 +22,15 @@ class Cliente:
         else:
             print('Arquivo não encontrado.')
 
-    def enviar_para_servidor(self, servidor, filename):
+    def enviar_para_servidor(self, servidor, filename): ## envio do arquivo em pacotes 
         host, port = servidor.split(':')
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((host, int(port)))
             s.sendall(filename.encode())  # Enviar o nome do arquivo
             s.recv(1024)  # Aguardar confirmação
 
-            with open(filename, 'rb') as f:
-                while (chunk := f.read(1024)):  # Ler e enviar o arquivo em pacotes de 1024 bytes
+            with open(filename, 'rb') as f: ## abre o arquivo em modo binário para leitura
+                while (chunk := f.read(1024)):  # lê e envia o arquivo em pacotes de 1024 bytes
                     s.sendall(chunk)
             print(f'Arquivo {filename} enviado para {host}:{port}.')
 

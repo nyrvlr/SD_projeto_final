@@ -1,8 +1,9 @@
 import socket
 import os
+import shutil
 
 class Servidor:
-    def __init__(self, port):
+    def __init__(self, port): ## armazena o numero da porta, define o nome do diretório e cria
         self.port = port
         self.data_dir = f'data_{port}'
         os.makedirs(self.data_dir, exist_ok=True)
@@ -18,22 +19,32 @@ class Servidor:
 
     def handle_client(self, conn):
         with conn:
-            filename = conn.recv(1024).decode()
-            filepath = os.path.join(self.data_dir, filename)
-            conn.sendall(b'ACK')  # Enviar confirmação de recebimento do nome do arquivo
-            
-            with open(filepath, 'wb') as f:  # Abre o arquivo em modo binário
-                while True:
-                    data = conn.recv(1024)
-                    if not data:
-                        break
-                    f.write(data)
-                print(f'Arquivo {filename} recebido e armazenado.')
+            request = conn.recv(1024).decode() ## recebe a mensagem de um cliente
+            if request == 'get_space': ## verifica se é uma solicitação de espaço disponível
+                self.send_available_space(conn) ## retorna com o espaço disponível
+            else:
+                self.receive_file(conn, request) ## retorna com o nome do arquivo
+
+    def receive_file(self, conn, filename):
+        filepath = os.path.join(self.data_dir, filename) ## define o caminho onde o arquivo será armazenado
+        conn.sendall(b'ACK')  # Enviar confirmação de recebimento do nome do arquivo
+
+        with open(filepath, 'wb') as f:  # Abre o arquivo para escrita em modo binário
+            while True:
+                data = conn.recv(1024) ## recebe os dados do arquivo em pedaços de 1024 bytes
+                if not data:
+                    break
+                f.write(data) ## escreve os dados recebidos no arquivo 
+            print(f'Arquivo {filename} recebido e armazenado.')
+
+    def send_available_space(self, conn):
+        total, used, free = shutil.disk_usage(self.data_dir) ## puxa o espaço total, usado e livre do diretório de armazenamento
+        conn.sendall(str(free).encode()) ## envia o espaço livre ao cliente como uma string codificada em bytes
 
     def replicar_arquivo(self, filepath, replica_host, replica_port):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((replica_host, replica_port))
-            with open(filepath, 'rb') as f:
+            s.connect((replica_host, replica_port)) ## conecta ao servidor da replica
+            with open(filepath, 'rb') as f: ## abre o arquivo pra leitura em modo binário
                 while (chunk := f.read(1024)):
                     s.sendall(chunk)
             print(f'Replicação do arquivo {filepath} enviada para {replica_host}:{replica_port}.')
